@@ -1,0 +1,303 @@
+import pandas as pd
+import json
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix,balanced_accuracy_score
+import seaborn as sns
+from torch.nn.functional import one_hot
+def load_nursing_by_index(index,dir='../data/nursing'):
+    i = index
+    df = pd.read_csv(f'{dir}/{i}/raw_data.csv',header=None)
+    with open(f'../data/Labeling-andrew/{i}_data.json','r') as f:
+        data = json.load(f)
+    y_true = np.zeros(len(df))
+    for puff in data['puffs']:
+        y_true[puff['start']:puff['end']] = 1
+    X = torch.from_numpy(df[[2,3,4]].to_numpy())
+    # y = one_hot(torch.from_numpy(y_true).long()).float()
+    y = torch.from_numpy(y_true)
+    return X,y
+def load_nursing_by_index_w5(index,dir='data/andrew-data'):
+    i = index
+    df = pd.read_csv(f'{dir}/{i}/raw_data.csv',header=None)
+    with open(f'{dir}/{i}/{i}_data.json','r') as f:
+        data = json.load(f)
+    y_true = np.zeros(len(df))
+    for puff in data['puffs']:
+        y_true[puff['start']:puff['end']] = 1
+    X = torch.from_numpy(df[[2,3,4]].to_numpy())
+    x = X[:,0].unsqueeze(1)
+    y = X[:,1].unsqueeze(1)
+    z = X[:,2].unsqueeze(1)
+    xs = [x[:-499]]
+    ys = [y[:-499]]
+    zs = [z[:-499]]
+    for i in range(1,499):
+        xs.append(x[i:i-499])
+        ys.append(y[i:i-499])
+        zs.append(z[i:i-499])
+    xs.append(x[499:])
+    ys.append(y[499:])
+    zs.append(z[499:])
+    xs = torch.cat(xs,axis=1).float()
+    ys = torch.cat(ys,axis=1).float()
+    zs = torch.cat(zs,axis=1).float()
+    X = torch.cat([xs,ys,zs],axis=1)
+    y = one_hot(torch.from_numpy(y_true[250:-249]).long()).float()
+    return X,y
+def load_thrasher_by_index(index,dir):
+    """
+    timestamp : 
+        https://developer.android.com/reference/android/hardware/SensorEvent#timestamp
+        'The time in nanoseconds at which the event happened. For a given sensor, each new sensor event should be monotonically increasing using the same time base as SystemClock.elapsedRealtimeNanos().'
+
+        https://developer.android.com/reference/android/os/SystemClock#elapsedRealtimeNanos()
+        Returns nanoseconds since boot, including time spent in sleep.
+
+    real time :
+        epoch time in milliseconds
+    """
+    import os
+    files = os.listdir(dir)
+    df = pd.read_csv(f'{dir}/{files[index]}/raw/{files[index]}.0.csv',skiprows=1)
+    with open(f'{dir}/{files[index]}/log.csv',"r") as f:
+        lines = f.readlines()
+    times,events = [],[]
+    for line in lines:
+        line = line.replace("\n","").split(":")
+        times.append(int(line[0]))
+        events.append(line[1].strip())
+    # convert time to seconds
+    df.timestamp = df.timestamp * 1e-9
+    df['real time'] = df['real time']/1000
+    print(f'Length from shape: {df.shape[0]/20}')
+    print(f'Length from timestamp: {(df.timestamp[len(df)-1]-df.timestamp[0])}')
+    print(f'Length from epoch time : {(df["real time"][len(df)-1]-df["real time"][0])}')
+    # df['rawlabel'] = df['rawlabel']*10
+    # df['label'] = df['label']*10
+    df['real time'] = (df['real time']*1000)
+    df['log'] = np.zeros(len(df))
+    X = torch.from_numpy(df[['acc_x','acc_y','acc_z']].to_numpy())
+    x = X[:,0].unsqueeze(1)
+    y = X[:,1].unsqueeze(1)
+    z = X[:,2].unsqueeze(1)
+    xs = [x[:-99]]
+    ys = [y[:-99]]
+    zs = [z[:-99]]
+    for i in range(1,99):
+        xs.append(x[i:i-99])
+        ys.append(y[i:i-99])
+        zs.append(z[i:i-99])
+    xs.append(x[99:])
+    ys.append(y[99:])
+    zs.append(z[99:])
+    xs = torch.cat(xs,axis=1).float()
+    ys = torch.cat(ys,axis=1).float()
+    zs = torch.cat(zs,axis=1).float()
+
+    X = torch.cat([xs,ys,zs],axis=1)
+    df = df.reset_index()
+    df['index'] = df['index']/20
+    return df,(times,events),X
+def cms(y_true,y_pred,path='.',loss=0):
+    fig,axes = plt.subplots(1,3,sharey=True,figsize=(10,5))
+    sns.heatmap(confusion_matrix(y_true=y_true,y_pred=y_pred,normalize='true'),annot=True,ax=axes[0],cbar=False,fmt='.2f')
+    sns.heatmap(confusion_matrix(y_true=y_true,y_pred=y_pred,normalize='pred'),annot=True,ax=axes[1],cbar=False,fmt='.2f')
+    sns.heatmap(confusion_matrix(y_true=y_true,y_pred=y_pred),annot=True,ax=axes[2],cbar=False,fmt='.2f')
+    axes[0].set_title('Recall')
+    axes[1].set_title('Precision')
+    axes[2].set_title('Count')
+    plt.suptitle(f'macro-recall : {balanced_accuracy_score(y_true=y_true,y_pred=y_pred)} loss : {loss}')
+    plt.savefig(f'{path}/cm.jpg',dpi=200,bbox_inches='tight')
+def run_old_state_machine_on_thresholded_predictions(predictions):
+    state = 0
+    states = []
+    puff_locations = []
+    currentInterPuffIntervalLength = 0
+    currentPuffLength = 0
+    for i,smokingOutput in enumerate(predictions):
+        states.append(state)
+        if (state == 0 and smokingOutput == 0.0):
+            # no action
+            state = 0
+        elif (state == 0 and smokingOutput == 1.0):
+            # starting validating puff length
+            state = 1
+            currentPuffLength += 1
+        elif (state == 1 and smokingOutput == 1.0):
+            # continuing not yet valid length puff
+            currentPuffLength += 1
+            if (currentPuffLength > 14) :
+                # valid puff length!
+                state = 2
+        elif (state == 1 and smokingOutput == 0.0):
+            # never was a puff, begin validating end
+            state = 3
+            currentInterPuffIntervalLength += 1
+        elif (state == 2 and smokingOutput == 1.0):
+            # continuing already valid puff
+            currentPuffLength += 1
+        elif (state == 2 and smokingOutput == 0.0):
+            # ending already valid puff length
+            state = 4 # begin validating inter puff interval
+            currentInterPuffIntervalLength += 1
+        elif (state == 3 and smokingOutput == 0.0): 
+            currentInterPuffIntervalLength += 1
+            if (currentInterPuffIntervalLength > 49):
+                # valid interpuff
+                state = 0
+                currentPuffLength = 0
+                currentInterPuffIntervalLength = 0
+        elif (state == 3 and smokingOutput == 1.0):
+            # was validating interpuff for puff that wasn't valid
+            currentPuffLength += 1
+            currentInterPuffIntervalLength = 0
+            if (currentPuffLength > 14) :
+                # valid puff length!
+                state = 2
+            state = 1
+        elif (state == 4 and smokingOutput == 0.0) :
+            currentInterPuffIntervalLength += 1
+            if (currentInterPuffIntervalLength > 49):
+                # valid interpuff for valid puff
+                state = 0
+                currentPuffLength = 0
+                currentInterPuffIntervalLength = 0
+                puff_locations.append(i)
+        elif (state == 4 and smokingOutput == 1.0):
+            # back into puff for already valid puff
+            currentInterPuffIntervalLength = 0
+            currentPuffLength += 1
+            state = 2
+
+    states = states[1:] + [0]
+    return states,puff_locations
+def run_new_state_machine_on_thresholded_predictions(predictions):
+    state = 0
+    states = []
+    puff_locations = []
+    currentInterPuffIntervalLength = 0
+    currentPuffLength = 0
+    for i,smokingOutput in enumerate(predictions):
+        states.append(state)
+        if (state == 0 and smokingOutput == 0.0):
+            # no action
+            state = 0
+        elif (state == 0 and smokingOutput == 1.0):
+            # starting validating puff length
+            state = 1
+            currentPuffLength += 1
+        elif (state == 1 and smokingOutput == 1.0):
+            # continuing not yet valid length puff
+            currentPuffLength += 1
+            if (currentPuffLength > 14) :
+                # valid puff length!
+                state = 2
+        elif (state == 1 and smokingOutput == 0.0):
+            # never was a puff, begin validating end
+            state = 3
+            currentInterPuffIntervalLength += 1
+        elif (state == 2 and smokingOutput == 1.0):
+            # continuing already valid puff
+            currentPuffLength += 1
+        elif (state == 2 and smokingOutput == 0.0):
+            # ending already valid puff length
+            state = 4 # begin validating inter puff interval
+            currentInterPuffIntervalLength += 1
+        elif (state == 3 and smokingOutput == 0.0): 
+            currentInterPuffIntervalLength += 1
+            if (currentInterPuffIntervalLength > 49):
+                # valid interpuff
+                state = 0
+                currentPuffLength = 0
+                currentInterPuffIntervalLength = 0
+        elif (state == 3 and smokingOutput == 1.0):
+            # was validating interpuff for puff that wasn't valid
+            currentPuffLength += 1
+            currentInterPuffIntervalLength = 0
+            if (currentPuffLength > 14) :
+                # valid puff length!
+                state = 2
+            else:
+                state = 1
+        elif (state == 4 and smokingOutput == 0.0) :
+            currentInterPuffIntervalLength += 1
+            if (currentInterPuffIntervalLength > 49):
+                # valid interpuff for valid puff
+                state = 0
+                currentPuffLength = 0
+                currentInterPuffIntervalLength = 0
+                puff_locations.append(i)
+        elif (state == 4 and smokingOutput == 1.0):
+            # back into puff for already valid puff
+            currentInterPuffIntervalLength = 0
+            currentPuffLength += 1
+            state = 2
+
+    states = states[1:] + [0]
+    return states,puff_locations
+def forward(X):
+    from pandas import read_csv
+    from tqdm import tqdm
+    ranges = read_csv('data/casey_network/range',header=None).to_numpy()
+    iW = read_csv('data/casey_network/input',header=None).to_numpy()
+    hW = read_csv('data/casey_network/hidden',header=None).to_numpy()
+    output = []
+    def oldMinMaxNorm(X):
+        """
+        attempted version on github (incorrect)
+        """
+        return ((X-X.min())/(X.max()-X.min())).tolist()
+    def correctedMinMaxNorm(X):
+        """
+        corrected
+        """
+        return ((2*((X-ranges[:,0])/(ranges[:,1]-ranges[:,0])))-1).tolist()
+    def tanSigmoid(X):
+        output = []
+        for x in X:
+            output.append((2/(1+np.exp(-2*x)))-1)
+        return output
+    def logSigmoid(x):
+        return (1/(1+np.exp(-1*x)))
+    def oldForward(X):
+        a = [1] + oldMinMaxNorm(X)
+        b = [1] + tanSigmoid(iW @ a)
+        c = hW @ b
+        d = logSigmoid(c[0])
+        return d
+    def correctedForward(X):
+        a = [1] + correctedMinMaxNorm(X)
+        b = [1] + tanSigmoid(iW @ a)
+        c = hW @ b
+        d = logSigmoid(c[0])
+        return d
+    for x in tqdm(X):
+        output.append(correctedForward(x))
+    return output + [0]*99
+def test_evaluation(dataloader,model,criterion,device='cuda'):
+    from tqdm import tqdm
+    y_true = torch.Tensor()
+    y_pred = torch.Tensor()
+    model_was_training = False
+    if(model.training):
+        # note that this changes the state of the model outside the scope of this function
+        model_was_training = True
+        model.eval()
+
+    loss_dev_total = 0
+    for (X,y) in tqdm(dataloader):
+        X,y = X.to(device),y.to(device)
+        logits = model(X)
+        loss = criterion(logits,y)
+        loss_dev_total += loss.item()
+        y_true = torch.cat([y_true,y.detach().cpu()])
+        y_pred = torch.cat([y_pred,torch.sigmoid(logits).detach().cpu()])
+    # cms(y_true=y_true,y_pred=[1.0 if yi > .08 else 0.0 for yi in y_pred],loss=loss)
+    cms(y_true=y_true,y_pred=y_pred.round(),loss=loss)
+
+    if(model_was_training):
+        model.train()
+
+    return loss_dev_total/len(dataloader),y_true,y_pred
