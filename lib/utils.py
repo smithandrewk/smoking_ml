@@ -6,45 +6,18 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix,balanced_accuracy_score
 import seaborn as sns
 from torch.nn.functional import one_hot
-def load_nursing_by_index(index,dir='../data/nursing'):
+def load_nursing_by_index(index,data_dir='../data/nursing.chrisogonas/',label_dir='../data/nursingv1_andrew'):
     i = index
-    df = pd.read_csv(f'{dir}/{i}/raw_data.csv',header=None)
-    with open(f'../data/Labeling-andrew/{i}_data.json','r') as f:
+    df = pd.read_csv(f'{data_dir}/{i}/raw_data.csv',header=None)
+    with open(f'{label_dir}/{i}_data.json','r') as f:
         data = json.load(f)
     y_true = np.zeros(len(df))
     for puff in data['puffs']:
         y_true[puff['start']:puff['end']] = 1
     X = torch.from_numpy(df[[2,3,4]].to_numpy())
-    # y = one_hot(torch.from_numpy(y_true).long()).float()
     y = torch.from_numpy(y_true)
-    return X,y
-def load_nursing_by_index_w5(index,dir='data/andrew-data'):
-    i = index
-    df = pd.read_csv(f'{dir}/{i}/raw_data.csv',header=None)
-    with open(f'{dir}/{i}/{i}_data.json','r') as f:
-        data = json.load(f)
-    y_true = np.zeros(len(df))
-    for puff in data['puffs']:
-        y_true[puff['start']:puff['end']] = 1
-    X = torch.from_numpy(df[[2,3,4]].to_numpy())
-    x = X[:,0].unsqueeze(1)
-    y = X[:,1].unsqueeze(1)
-    z = X[:,2].unsqueeze(1)
-    xs = [x[:-499]]
-    ys = [y[:-499]]
-    zs = [z[:-499]]
-    for i in range(1,499):
-        xs.append(x[i:i-499])
-        ys.append(y[i:i-499])
-        zs.append(z[i:i-499])
-    xs.append(x[499:])
-    ys.append(y[499:])
-    zs.append(z[499:])
-    xs = torch.cat(xs,axis=1).float()
-    ys = torch.cat(ys,axis=1).float()
-    zs = torch.cat(zs,axis=1).float()
-    X = torch.cat([xs,ys,zs],axis=1)
-    y = one_hot(torch.from_numpy(y_true[250:-249]).long()).float()
+    X = X.float()[::5] # downsample to 20 Hz
+    y = y.unsqueeze(1).float()[::5]
     return X,y
 def load_thrasher_by_index(index,dir):
     """
@@ -237,12 +210,51 @@ def run_new_state_machine_on_thresholded_predictions(predictions):
 
     states = states[1:] + [0]
     return states,puff_locations
-def forward(X):
+def forward_casey(X):
     from pandas import read_csv
     from tqdm import tqdm
-    ranges = read_csv('data/casey_network/range',header=None).to_numpy()
-    iW = read_csv('data/casey_network/input',header=None).to_numpy()
-    hW = read_csv('data/casey_network/hidden',header=None).to_numpy()
+    ranges = read_csv('../data/casey_network/range',header=None).to_numpy()
+    iW = read_csv('../data/casey_network/input',header=None).to_numpy()
+    hW = read_csv('../data/casey_network/hidden',header=None).to_numpy()
+    output = []
+    def oldMinMaxNorm(X):
+        """
+        attempted version on github (incorrect)
+        """
+        return ((X-X.min())/(X.max()-X.min())).tolist()
+    def correctedMinMaxNorm(X):
+        """
+        corrected
+        """
+        return ((2*((X-ranges[:,0])/(ranges[:,1]-ranges[:,0])))-1).tolist()
+    def tanSigmoid(X):
+        output = []
+        for x in X:
+            output.append((2/(1+np.exp(-2*x)))-1)
+        return output
+    def logSigmoid(x):
+        return (1/(1+np.exp(-1*x)))
+    def oldForward(X):
+        a = [1] + oldMinMaxNorm(X)
+        b = [1] + tanSigmoid(iW @ a)
+        c = hW @ b
+        d = logSigmoid(c[0])
+        return d
+    def correctedForward(X):
+        a = [1] + correctedMinMaxNorm(X)
+        b = [1] + tanSigmoid(iW @ a)
+        c = hW @ b
+        d = logSigmoid(c[0])
+        return d
+    for x in tqdm(X):
+        output.append(oldForward(x))
+    return output + [0]*99
+def forward_casey_corrected(X):
+    from pandas import read_csv
+    from tqdm import tqdm
+    ranges = read_csv('../data/casey_network/range',header=None).to_numpy()
+    iW = read_csv('../data/casey_network/input',header=None).to_numpy()
+    hW = read_csv('../data/casey_network/hidden',header=None).to_numpy()
     output = []
     def oldMinMaxNorm(X):
         """
@@ -276,7 +288,7 @@ def forward(X):
     for x in tqdm(X):
         output.append(correctedForward(x))
     return output + [0]*99
-def test_evaluation(dataloader,model,criterion,device='cuda'):
+def test_evaluation(dataloader,model,criterion,plot=True,device='cuda'):
     from tqdm import tqdm
     y_true = torch.Tensor()
     y_pred = torch.Tensor()
@@ -294,10 +306,68 @@ def test_evaluation(dataloader,model,criterion,device='cuda'):
         loss_dev_total += loss.item()
         y_true = torch.cat([y_true,y.detach().cpu()])
         y_pred = torch.cat([y_pred,torch.sigmoid(logits).detach().cpu()])
-    # cms(y_true=y_true,y_pred=[1.0 if yi > .08 else 0.0 for yi in y_pred],loss=loss)
-    cms(y_true=y_true,y_pred=y_pred.round(),loss=loss)
+
+    if(plot):
+        cms(y_true=y_true,y_pred=y_pred.round(),loss=(loss_dev_total/len(dataloader)))
 
     if(model_was_training):
         model.train()
 
     return loss_dev_total/len(dataloader),y_true,y_pred
+def window_nursing_single_channel(X,y,window_size=101):
+    X = X[:,0].unsqueeze(1)
+    xs = [X[:-(window_size-1)]]
+    for i in range(1,window_size-1):
+        xs.append(X[i:i-(window_size-1)])
+    xs.append(X[(window_size-1):])
+    X = torch.cat(xs,axis=1)
+    y = y[window_size//2:-(window_size//2)]
+    return X,y
+def window_nursing(X,y_true,window_size=101):
+    x = X[:,0].unsqueeze(1)
+    y = X[:,1].unsqueeze(1)
+    z = X[:,2].unsqueeze(1)
+    xs = [x[:-(window_size-1)]]
+    ys = [y[:-(window_size-1)]]
+    zs = [z[:-(window_size-1)]]
+    for i in range(1,window_size-1):
+        xs.append(x[i:i-(window_size-1)])
+        ys.append(y[i:i-(window_size-1)])
+        zs.append(z[i:i-(window_size-1)])
+    xs.append(x[(window_size-1):])
+    ys.append(y[(window_size-1):])
+    zs.append(z[(window_size-1):])
+    xs = torch.cat(xs,axis=1).float()
+    ys = torch.cat(ys,axis=1).float()
+    zs = torch.cat(zs,axis=1).float()
+    X = torch.cat([xs,ys,zs],axis=1)
+    y_true = y_true[window_size//2:-(window_size//2)]
+    return X,y_true
+
+def load_nursing_list(idxs,data_dir,label_dir):
+    X = torch.Tensor()
+    y = torch.Tensor()
+
+    skip_idx = [19,24,26,32,34,38,40,45,52,55,70]
+    for idx in idxs:
+        if(idx in skip_idx):
+            continue
+        Xi,yi = load_nursing_by_index(idx,data_dir=data_dir,label_dir=label_dir)
+        X = torch.cat([X,Xi])
+        y = torch.cat([y,yi])
+    return X,y
+def load_and_window_nursing_list(idxs,data_dir,label_dir,window_size):
+    X = torch.Tensor()
+    y = torch.Tensor()
+
+    skip_idx = [19,24,26,32,34,38,40,45,52,55,70]
+    for idx in idxs:
+        if(idx in skip_idx):
+            continue
+        Xi,yi = load_nursing_by_index(idx,data_dir=data_dir,label_dir=label_dir)
+        Xi,yi = window_nursing(Xi,yi,window_size=window_size)
+        X = torch.cat([X,Xi])
+        y = torch.cat([y,yi])
+    return X,y
+def load_and_window_nursing_by_index(idx,window_size=201):
+    return window_nursing(*load_nursing_by_index(idx,dir='../data/nursing.chrisogonas/'),window_size=window_size)
