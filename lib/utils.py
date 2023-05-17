@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix,balanced_accuracy_score
 import seaborn as sns
 from torch.nn.functional import one_hot
-def load_nursing_by_index(index,data_dir='../data/nursing.chrisogonas/',label_dir='../data/nursingv1_andrew'):
+def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data/nursingv1_andrew'):
     i = index
     df = pd.read_csv(f'{data_dir}/{i}/raw_data.csv',header=None)
     with open(f'{label_dir}/{i}_data.json','r') as f:
@@ -356,7 +356,7 @@ def load_nursing_list(idxs,data_dir,label_dir):
         X = torch.cat([X,Xi])
         y = torch.cat([y,yi])
     return X,y
-def load_and_window_nursing_list(idxs,data_dir,label_dir,window_size):
+def load_and_window_nursing_list(idxs,data_dir=f'../data/nursingv1',label_dir=f'../data/nursingv1_andrew',window_size=101):
     X = torch.Tensor()
     y = torch.Tensor()
 
@@ -371,3 +371,25 @@ def load_and_window_nursing_list(idxs,data_dir,label_dir,window_size):
     return X,y
 def load_and_window_nursing_by_index(idx,window_size=201):
     return window_nursing(*load_nursing_by_index(idx,dir='../data/nursing.chrisogonas/'),window_size=window_size)
+def load_and_window_nursing_list_for_convolution(idxs,data_dir=f'../data/nursingv1',label_dir=f'../data/nursingv1_andrew',window_size=101):
+    X = torch.Tensor()
+    y = torch.Tensor()
+
+    skip_idx = [19,24,26,32,34,38,40,45,52,55,70]
+    for idx in idxs:
+        if(idx in skip_idx):
+            continue
+        Xi,yi = load_nursing_by_index(idx,data_dir=data_dir,label_dir=label_dir)
+        Xi,yi = window_nursing_for_convolution(Xi,yi,window_size=window_size)
+        X = torch.cat([X,Xi])
+        y = torch.cat([y,yi])
+    return X,y
+def window_nursing_for_convolution(X,y,window_size=101):
+    X = X.unsqueeze(2)
+    xs = [X[:-(window_size-1)]]
+    for i in range(1,window_size-1):
+        xs.append(X[i:i-(window_size-1)])
+    xs.append(X[(window_size-1):])
+    X = torch.cat(xs,axis=2)
+    y = y[window_size//2:-(window_size//2)]
+    return X,y
