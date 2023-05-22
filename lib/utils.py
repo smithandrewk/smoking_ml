@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix,balanced_accuracy_score
 import seaborn as sns
 from torch.nn.functional import one_hot
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
 def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data/nursingv1_andrew'):
     i = index
     df = pd.read_csv(f'{data_dir}/{i}/raw_data.csv',header=None)
@@ -73,7 +75,7 @@ def load_thrasher_by_index(index,dir):
     df = df.reset_index()
     df['index'] = df['index']/20
     return df,(times,events),X
-def cms(y_true,y_pred,path='.',loss=0):
+def cms(y_true,y_pred,dir='.',filename=f'cm.jpg',loss=0):
     fig,axes = plt.subplots(1,3,sharey=True,figsize=(10,5))
     sns.heatmap(confusion_matrix(y_true=y_true,y_pred=y_pred,normalize='true'),annot=True,ax=axes[0],cbar=False,fmt='.2f')
     sns.heatmap(confusion_matrix(y_true=y_true,y_pred=y_pred,normalize='pred'),annot=True,ax=axes[1],cbar=False,fmt='.2f')
@@ -82,7 +84,7 @@ def cms(y_true,y_pred,path='.',loss=0):
     axes[1].set_title('Precision')
     axes[2].set_title('Count')
     plt.suptitle(f'macro-recall : {balanced_accuracy_score(y_true=y_true,y_pred=y_pred)} loss : {loss}')
-    plt.savefig(f'{path}/cm.jpg',dpi=200,bbox_inches='tight')
+    plt.savefig(f'{dir}/{filename}',dpi=200,bbox_inches='tight')
 def run_old_state_machine_on_thresholded_predictions(predictions):
     state = 0
     states = []
@@ -288,7 +290,7 @@ def forward_casey_corrected(X):
     for x in tqdm(X):
         output.append(correctedForward(x))
     return output + [0]*99
-def test_evaluation(dataloader,model,criterion,plot=True,device='cuda'):
+def test_evaluation(dataloader,model,criterion,dir,filename=f'cm.jpg',plot=True,device='cuda'):
     from tqdm import tqdm
     y_true = torch.Tensor()
     y_pred = torch.Tensor()
@@ -308,7 +310,7 @@ def test_evaluation(dataloader,model,criterion,plot=True,device='cuda'):
         y_pred = torch.cat([y_pred,torch.sigmoid(logits).detach().cpu()])
 
     if(plot):
-        cms(y_true=y_true,y_pred=y_pred.round(),loss=(loss_dev_total/len(dataloader)))
+        cms(y_true=y_true,y_pred=y_pred.round(),loss=(loss_dev_total/len(dataloader)),dir=dir,filename=filename)
 
     if(model_was_training):
         model.train()
@@ -393,3 +395,13 @@ def window_nursing_for_convolution(X,y,window_size=101):
     X = torch.cat(xs,axis=2)
     y = y[window_size//2:-(window_size//2)]
     return X,y
+def load_data(window_size=101):
+    train_idx = range(2)
+    window_size = 101
+    X,y = load_and_window_nursing_list(train_idx,window_size=window_size)
+    X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=.2,stratify=y)
+    X_train,X_dev,y_train,y_dev = train_test_split(X_train,y_train,test_size=.25,stratify=y_train)
+    trainloader = DataLoader(TensorDataset(X_train,y_train),batch_size=64,shuffle=True)
+    devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
+    testloader = DataLoader(TensorDataset(X_test,y_test),batch_size=64,shuffle=True)
+    return trainloader,devloader,testloader
