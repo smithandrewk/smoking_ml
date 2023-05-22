@@ -8,6 +8,8 @@ import seaborn as sns
 from torch.nn.functional import one_hot
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
+import random
+
 def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data/nursingv1_andrew'):
     i = index
     df = pd.read_csv(f'{data_dir}/{i}/raw_data.csv',header=None)
@@ -290,7 +292,7 @@ def forward_casey_corrected(X):
     for x in tqdm(X):
         output.append(correctedForward(x))
     return output + [0]*99
-def test_evaluation(dataloader,model,criterion,dir,filename=f'cm.jpg',plot=True,device='cuda'):
+def test_evaluation(dataloader,model,criterion,dir='.',filename=f'cm.jpg',plot=True,device='cuda'):
     from tqdm import tqdm
     y_true = torch.Tensor()
     y_pred = torch.Tensor()
@@ -395,9 +397,8 @@ def window_nursing_for_convolution(X,y,window_size=101):
     X = torch.cat(xs,axis=2)
     y = y[window_size//2:-(window_size//2)]
     return X,y
-def load_data(window_size=101):
-    train_idx = range(71)
-    window_size = 101
+def load_data(window_size=101,n=71):
+    train_idx = range(n)
     X,y = load_and_window_nursing_list(train_idx,window_size=window_size)
     X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=.2,stratify=y)
     X_train,X_dev,y_train,y_dev = train_test_split(X_train,y_train,test_size=.25,stratify=y_train)
@@ -405,3 +406,31 @@ def load_data(window_size=101):
     devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
     testloader = DataLoader(TensorDataset(X_test,y_test),batch_size=64,shuffle=True)
     return trainloader,devloader,testloader
+def load_data_convolution(window_size=101,n=71):
+    train_idx = range(n)
+    X,y = load_and_window_nursing_list_for_convolution(train_idx,window_size=window_size)
+    X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=.2,stratify=y)
+    X_train,X_dev,y_train,y_dev = train_test_split(X_train,y_train,test_size=.25,stratify=y_train)
+    trainloader = DataLoader(TensorDataset(X_train,y_train),batch_size=64,shuffle=True)
+    devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
+    testloader = DataLoader(TensorDataset(X_test,y_test),batch_size=64,shuffle=True)
+    return trainloader,devloader,testloader
+def load_data_cv(foldi=0,window_size=101):
+    skip_idx = [19,24,26,32,34,38,40,45,52,55,70]
+    all_idx = list(range(71))
+    for idx in skip_idx:
+        all_idx.remove(idx)
+    random.seed(0)
+    random.shuffle(all_idx)
+    k_folds = 5
+    foldi = 0
+    fold_size = int(len(all_idx)/k_folds)
+    test_idx = all_idx[foldi*fold_size:(foldi+1)*fold_size]
+    for idx in test_idx:
+        all_idx.remove(idx)
+    train_idx = all_idx
+    X,y = load_and_window_nursing_list(train_idx,window_size=window_size)
+    X_train,X_dev,y_train,y_dev = train_test_split(X,y,test_size=.05,stratify=y)
+    trainloader = DataLoader(TensorDataset(X_train,y_train),batch_size=64,shuffle=True)
+    devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
+    return trainloader,devloader,test_idx

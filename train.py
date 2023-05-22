@@ -141,7 +141,7 @@ for epoch in pbar:
     # save on checkpoint
     torch.save(model.state_dict(), f=f'{project_dir}/{current_date}/{epoch}.pt')
 
-test_evaluation(devloader,model,criterion,dir=f'{project_dir}/{current_date}',filename='cm.jpg')
+test_evaluation(devloader,model,criterion,dir=f'{project_dir}/{current_date}',filename='cm.jpg',device=device)
 
 torch.save(model.state_dict(), f=f'{project_dir}/{current_date}/model.pt')
 torch.save(model.state_dict(), f=f'{project_dir}/model.pt')
