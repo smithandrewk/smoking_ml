@@ -116,7 +116,7 @@ for epoch in pbar:
                 patiencei = 0
                 best_model_index = epoch
                 torch.save(model.state_dict(), f=f'{project_dir}/best_model.pt')
-                test_evaluation(devloader,model,criterion,dir=f'{project_dir}',filename='cm_best.jpg')
+                test_evaluation(devloader,model,criterion,dir=f'{project_dir}',filename='cm_best.jpg',device=device)
             else:
                 patiencei += 1
                 if(patiencei == 20):

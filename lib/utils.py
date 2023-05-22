@@ -396,7 +396,7 @@ def window_nursing_for_convolution(X,y,window_size=101):
     y = y[window_size//2:-(window_size//2)]
     return X,y
 def load_data(window_size=101):
-    train_idx = range(2)
+    train_idx = range(71)
     window_size = 101
     X,y = load_and_window_nursing_list(train_idx,window_size=window_size)
     X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=.2,stratify=y)
