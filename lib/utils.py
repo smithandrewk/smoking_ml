@@ -423,13 +423,30 @@ def load_data_cv(foldi=0,window_size=101):
     random.seed(0)
     random.shuffle(all_idx)
     k_folds = 5
-    foldi = 0
     fold_size = int(len(all_idx)/k_folds)
     test_idx = all_idx[foldi*fold_size:(foldi+1)*fold_size]
     for idx in test_idx:
         all_idx.remove(idx)
     train_idx = all_idx
     X,y = load_and_window_nursing_list(train_idx,window_size=window_size)
+    X_train,X_dev,y_train,y_dev = train_test_split(X,y,test_size=.05,stratify=y)
+    trainloader = DataLoader(TensorDataset(X_train,y_train),batch_size=64,shuffle=True)
+    devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
+    return trainloader,devloader,test_idx
+def load_data_convolution_cv(foldi=0,window_size=101):
+    skip_idx = [19,24,26,32,34,38,40,45,52,55,70]
+    all_idx = list(range(71))
+    for idx in skip_idx:
+        all_idx.remove(idx)
+    random.seed(0)
+    random.shuffle(all_idx)
+    k_folds = 5
+    fold_size = int(len(all_idx)/k_folds)
+    test_idx = all_idx[foldi*fold_size:(foldi+1)*fold_size]
+    for idx in test_idx:
+        all_idx.remove(idx)
+    train_idx = all_idx
+    X,y = load_and_window_nursing_list_for_convolution(train_idx,window_size=window_size)
     X_train,X_dev,y_train,y_dev = train_test_split(X,y,test_size=.05,stratify=y)
     trainloader = DataLoader(TensorDataset(X_train,y_train),batch_size=64,shuffle=True)
     devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
