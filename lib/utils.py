@@ -347,7 +347,6 @@ def window_nursing(X,y_true,window_size=101):
     X = torch.cat([xs,ys,zs],axis=1)
     y_true = y_true[window_size//2:-(window_size//2)]
     return X,y_true
-
 def load_nursing_list(idxs,data_dir,label_dir):
     X = torch.Tensor()
     y = torch.Tensor()

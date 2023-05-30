@@ -52,7 +52,7 @@ if not os.path.isdir(project_dir):
 if not os.path.isdir(f'{project_dir}/{current_date}'):
     os.system(f'mkdir {project_dir}/{current_date}')
 
-trainloader,devloader,testloader = load_data_convolution()
+trainloader,devloader,_ = load_data_convolution_cv(foldi=args.fold)
 model = FCN()
 params = sum([p.flatten().size()[0] for p in list(model.parameters())])
 print("Params: ",params)
@@ -82,6 +82,7 @@ loss_tr = []
 loss_dev = []
 patiencei = 0
 best_model_index = 0
+
 pbar = tqdm(range(config['EPOCHS']))
 for epoch in pbar:
     # train loop
@@ -117,6 +118,7 @@ for epoch in pbar:
                 patiencei = 0
                 best_model_index = epoch
                 torch.save(model.state_dict(), f=f'{project_dir}/best_model.pt')
+                torch.save(model.state_dict(), f=f'{project_dir}/{current_date}/best_model.pt')
                 test_evaluation(devloader,model,criterion,dir=f'{project_dir}',filename='cm_best.jpg',device=device)
             else:
                 patiencei += 1
