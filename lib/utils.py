@@ -23,7 +23,40 @@ def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data
     X = X.float()[::5] # downsample to 20 Hz
     y = y.unsqueeze(1).float()[::5]
     return X,y
-def load_thrasher_by_index(index,dir):
+def load_delta_dir_by_path(path):
+    fs = 20
+    df = pd.read_csv(path,skiprows=1)
+    df.timestamp = (df.timestamp - df.timestamp[0])*1e-9
+    df['real time'] = (df['real time']-df['real time'][0])/1000
+    df = df.reset_index()
+    df['index'] = df['index']/fs
+    # df['rawlabel'] = pd.concat([pd.DataFrame(np.zeros(100)),df.loc[:len(df)-101,'rawlabel']]).reset_index(drop=True)[0]
+    # df['state'] = pd.concat([pd.DataFrame(np.zeros(100)),df.loc[:len(df)-101,'state']]).reset_index(drop=True)[0]
+    # df['label'] = pd.concat([pd.DataFrame(np.zeros(100)),df.loc[:len(df)-101,'label']]).reset_index(drop=True)[0]
+    df['rawlabel_10'] = df['rawlabel']*10
+    df['label_10'] = df['label']*10
+    df['state_10'] = df['state']*10
+    X = torch.from_numpy(df[['acc_x','acc_y','acc_z']].to_numpy())
+    x = X[:,0].unsqueeze(1)
+    y = X[:,1].unsqueeze(1)
+    z = X[:,2].unsqueeze(1)
+    xs = [x[:-99]]
+    ys = [y[:-99]]
+    zs = [z[:-99]]
+    for i in range(1,99):
+        xs.append(x[i:i-99])
+        ys.append(y[i:i-99])
+        zs.append(z[i:i-99])
+    xs.append(x[99:])
+    ys.append(y[99:])
+    zs.append(z[99:])
+    xs = torch.cat(xs,axis=1).float()
+    ys = torch.cat(ys,axis=1).float()
+    zs = torch.cat(zs,axis=1).float()
+
+    X = torch.cat([xs,ys,zs],axis=1)
+    return df,X
+def load_data_dir_by_index(index,dir):
     """
     timestamp : 
         https://developer.android.com/reference/android/hardware/SensorEvent#timestamp
@@ -147,7 +180,6 @@ def run_old_state_machine_on_thresholded_predictions(predictions):
             currentInterPuffIntervalLength = 0
             currentPuffLength += 1
             state = 2
-
     states = states[1:] + [0]
     return states,puff_locations
 def run_new_state_machine_on_thresholded_predictions(predictions):
@@ -211,7 +243,6 @@ def run_new_state_machine_on_thresholded_predictions(predictions):
             currentInterPuffIntervalLength = 0
             currentPuffLength += 1
             state = 2
-
     states = states[1:] + [0]
     return states,puff_locations
 def forward_casey(X):
