@@ -9,6 +9,7 @@ from torch.nn.functional import one_hot
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 import random
+import os
 
 def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data/nursingv1_andrew'):
     i = index
@@ -23,13 +24,16 @@ def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data
     X = X.float()[::5] # downsample to 20 Hz
     y = y.unsqueeze(1).float()[::5]
     return X,y
-def load_delta_dir_by_path(path):
+def load_delta_by_path(path):
     fs = 20
     df = pd.read_csv(path,skiprows=1)
     df.timestamp = (df.timestamp - df.timestamp[0])*1e-9
     df['real time'] = (df['real time']-df['real time'][0])/1000
     df = df.reset_index()
     df['index'] = df['index']/fs
+    print(f'Length from shape: {df.shape[0]/20}')
+    print(f'Length from timestamp: {(df.timestamp[len(df)-1]-df.timestamp[0])}')
+    print(f'Length from epoch time : {(df["real time"][len(df)-1]-df["real time"][0])}')
     # df['rawlabel'] = pd.concat([pd.DataFrame(np.zeros(100)),df.loc[:len(df)-101,'rawlabel']]).reset_index(drop=True)[0]
     # df['state'] = pd.concat([pd.DataFrame(np.zeros(100)),df.loc[:len(df)-101,'state']]).reset_index(drop=True)[0]
     # df['label'] = pd.concat([pd.DataFrame(np.zeros(100)),df.loc[:len(df)-101,'label']]).reset_index(drop=True)[0]
@@ -53,63 +57,42 @@ def load_delta_dir_by_path(path):
     xs = torch.cat(xs,axis=1).float()
     ys = torch.cat(ys,axis=1).float()
     zs = torch.cat(zs,axis=1).float()
-
     X = torch.cat([xs,ys,zs],axis=1)
     return df,X
-def load_data_dir_by_index(index,dir):
-    """
-    timestamp : 
-        https://developer.android.com/reference/android/hardware/SensorEvent#timestamp
-        'The time in nanoseconds at which the event happened. For a given sensor, each new sensor event should be monotonically increasing using the same time base as SystemClock.elapsedRealtimeNanos().'
+def load_delta_from_dir_by_index(index,dir):
+    recording_directories = os.listdir(dir)
+    path = f'{dir}/{recording_directories[index]}/raw/{recording_directories[index]}.0.csv'
+    df,X = load_delta_by_path(path)
+    return df,X
+# def load_data_dir_by_index(index,dir):
+#     """
+#     timestamp : 
+#         https://developer.android.com/reference/android/hardware/SensorEvent#timestamp
+#         'The time in nanoseconds at which the event happened. For a given sensor, each new sensor event should be monotonically increasing using the same time base as SystemClock.elapsedRealtimeNanos().'
 
-        https://developer.android.com/reference/android/os/SystemClock#elapsedRealtimeNanos()
-        Returns nanoseconds since boot, including time spent in sleep.
+#         https://developer.android.com/reference/android/os/SystemClock#elapsedRealtimeNanos()
+#         Returns nanoseconds since boot, including time spent in sleep.
 
-    real time :
-        epoch time in milliseconds
-    """
-    import os
-    files = os.listdir(dir)
-    df = pd.read_csv(f'{dir}/{files[index]}/raw/{files[index]}.0.csv',skiprows=1)
-    with open(f'{dir}/{files[index]}/log.csv',"r") as f:
-        lines = f.readlines()
-    times,events = [],[]
-    for line in lines:
-        line = line.replace("\n","").split(":")
-        times.append(int(line[0]))
-        events.append(line[1].strip())
-    # convert time to seconds
-    df.timestamp = df.timestamp * 1e-9
-    df['real time'] = df['real time']/1000
-    print(f'Length from shape: {df.shape[0]/20}')
-    print(f'Length from timestamp: {(df.timestamp[len(df)-1]-df.timestamp[0])}')
-    print(f'Length from epoch time : {(df["real time"][len(df)-1]-df["real time"][0])}')
-    # df['rawlabel'] = df['rawlabel']*10
-    # df['label'] = df['label']*10
-    df['real time'] = (df['real time']*1000)
-    df['log'] = np.zeros(len(df))
-    X = torch.from_numpy(df[['acc_x','acc_y','acc_z']].to_numpy())
-    x = X[:,0].unsqueeze(1)
-    y = X[:,1].unsqueeze(1)
-    z = X[:,2].unsqueeze(1)
-    xs = [x[:-99]]
-    ys = [y[:-99]]
-    zs = [z[:-99]]
-    for i in range(1,99):
-        xs.append(x[i:i-99])
-        ys.append(y[i:i-99])
-        zs.append(z[i:i-99])
-    xs.append(x[99:])
-    ys.append(y[99:])
-    zs.append(z[99:])
-    xs = torch.cat(xs,axis=1).float()
-    ys = torch.cat(ys,axis=1).float()
-    zs = torch.cat(zs,axis=1).float()
+#     real time :
+#         epoch time in milliseconds
+#     """
+#     import os
+#     files = os.listdir(dir)
+#     df = pd.read_csv(f'{dir}/{files[index]}/raw/{files[index]}.0.csv',skiprows=1)
+#     with open(f'{dir}/{files[index]}/log.csv',"r") as f:
+#         lines = f.readlines()
+#     times,events = [],[]
+#     for line in lines:
+#         line = line.replace("\n","").split(":")
+#         times.append(int(line[0]))
+#         events.append(line[1].strip())
+#     # convert time to seconds
+#     df.timestamp = df.timestamp * 1e-9
+#     df['real time'] = df['real time']/1000
 
-    X = torch.cat([xs,ys,zs],axis=1)
-    df = df.reset_index()
-    df['index'] = df['index']/20
-    return df,(times,events),X
+#     df['log'] = np.zeros(len(df))
+
+#     return df,(times,events),X
 def cms(y_true,y_pred,dir='.',filename=f'cm.jpg',loss=0):
     fig,axes = plt.subplots(1,3,sharey=True,figsize=(10,5))
     sns.heatmap(confusion_matrix(y_true=y_true,y_pred=y_pred,normalize='true'),annot=True,ax=axes[0],cbar=False,fmt='.2f')
@@ -481,3 +464,17 @@ def load_data_convolution_cv(foldi=0,window_size=101):
     trainloader = DataLoader(TensorDataset(X_train,y_train),batch_size=64,shuffle=True)
     devloader = DataLoader(TensorDataset(X_dev,y_dev),batch_size=64,shuffle=True)
     return trainloader,devloader,test_idx
+def load_cv_test_idx(foldi=0,window_size=101):
+    skip_idx = [19,24,26,32,34,38,40,45,52,55,70]
+    all_idx = list(range(71))
+    for idx in skip_idx:
+        all_idx.remove(idx)
+    random.seed(0)
+    random.shuffle(all_idx)
+    k_folds = 5
+    fold_size = int(len(all_idx)/k_folds)
+    test_idx = all_idx[foldi*fold_size:(foldi+1)*fold_size]
+    for idx in test_idx:
+        all_idx.remove(idx)
+    train_idx = all_idx
+    return test_idx
