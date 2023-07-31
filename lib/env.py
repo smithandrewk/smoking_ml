@@ -1,3 +1,3 @@
-DATA_DIR = f'../data/nursing/'
-LABEL_DIR = f'../data/nursing_andrew'
-DEVICE = f'mps'
+DATA_DIR = f'../data/nursingv1'
+LABEL_DIR = f'../data/nursingv1_andrew'
+DEVICE = f'cuda'

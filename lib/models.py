@@ -105,9 +105,10 @@ class ResNet(nn.Module):
         self.block2 = ResBlock(in_channels=64,out_channels=128)
         self.gap = nn.AvgPool1d(kernel_size=101)
         self.fc1 = nn.Linear(in_features=128,out_features=1)
-    def forward(self,x):
+    def forward(self,x,classification=True):
         x = self.block1(x)
         x = self.block2(x)
         x = self.gap(x)
-        x = self.fc1(x.squeeze(2))
+        if(classification):
+            x = self.fc1(x.squeeze(2))
         return x

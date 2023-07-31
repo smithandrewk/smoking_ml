@@ -11,12 +11,12 @@ from seaborn import heatmap
 from tqdm import tqdm
 from lib.env import *
 
-def window_epoched_signal(X,windowsize,zero_padding=True):
+def window_epoched_signal(X,windowsize,n_channels,zero_padding=True):
     """
     only works for odd windows, puts label at center
     """
     if(zero_padding):
-        X = torch.cat([torch.zeros(windowsize//2,3),X,torch.zeros(windowsize//2,3)])
+        X = torch.cat([torch.zeros(windowsize//2,n_channels),X,torch.zeros(windowsize//2,n_channels)])
     cat = [X[:-(windowsize-1)]]
     for i in range(1,(windowsize-1)):
         cat.append(X[i:i-(windowsize-1)])
