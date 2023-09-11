@@ -61,7 +61,7 @@ def load_nursing_list(idxs,data_dir,label_dir):
         X = torch.cat([X,Xi])
         y = torch.cat([y,yi])
     return X,y
-def load_and_window_nursing_list(idxs,data_dir=f'../data/nursingv1',label_dir=f'../data/nursingv1_andrew',window_size=101):
+def load_and_window_nursing_list(idxs,data_dir=f'../data/nursing',label_dir=f'../data/nursing_andrew',window_size=101):
     X = torch.Tensor()
     y = torch.Tensor()
 
@@ -76,7 +76,7 @@ def load_and_window_nursing_list(idxs,data_dir=f'../data/nursingv1',label_dir=f'
     return X,y
 def load_and_window_nursing_by_index(idx,window_size=201):
     return window_nursing(*load_nursing_by_index(idx,dir='../data/nursing.chrisogonas/'),window_size=window_size)
-def load_and_window_nursing_list_for_convolution(idxs,data_dir=f'../data/nursingv1',label_dir=f'../data/nursingv1_andrew',window_size=101):
+def load_and_window_nursing_list_for_convolution(idxs,data_dir=f'../data/nursing',label_dir=f'../data/nursing_andrew',window_size=101):
     X = torch.Tensor()
     y = torch.Tensor()
 
@@ -180,15 +180,15 @@ def load_cv_test_idx(foldi=0,window_size=101):
         all_idx.remove(idx)
     train_idx = all_idx
     return test_idx
-def load_nursing_by_index(index,data_dir='../data/nursingv1/',label_dir='../data/nursingv1_andrew'):
+def load_nursing_by_index(index,data_dir='../data/nursing/',label_dir='../data/nursing_andrew'):
     i = index
-    df = pd.read_csv(f'{data_dir}/{i}/raw_data.csv',header=None)
-    with open(f'{label_dir}/{i}_data.json','r') as f:
+    df = pd.read_csv(f'{data_dir}/{i}/raw_data.csv')
+    with open(f'{label_dir}/{i}.json','r') as f:
         data = load(f)
     y_true = np.zeros(len(df))
     for puff in data['puffs']:
         y_true[puff['start']:puff['end']] = 1
-    X = torch.from_numpy(df[[2,3,4]].to_numpy())
+    X = torch.from_numpy(df[['x','y','z']].to_numpy())
     y = torch.from_numpy(y_true)
     X = X.float()[::5] # downsample to 20 Hz
     y = y.unsqueeze(1).float()[::5]
