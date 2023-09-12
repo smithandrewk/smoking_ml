@@ -1,5 +1,9 @@
 from torch import nn
 from torch.nn.functional import relu
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from lib.env import *
 class MLP(nn.Module):
     def __init__(self,window_size) -> None:
         super().__init__()
@@ -112,3 +116,53 @@ class ResNet(nn.Module):
         if(classification):
             x = self.fc1(x.squeeze(2))
         return x
+class Casey1p0():
+    def __init__(self):
+        self.range = pd.read_csv(f'{DATA_PATH}/casey_network/range',header=None).to_numpy()
+        self.fc1 = pd.read_csv(f'{DATA_PATH}/casey_network/input',header=None).to_numpy()
+        self.fc2 = pd.read_csv(f'{DATA_PATH}/casey_network/hidden',header=None).to_numpy()
+    def __minMaxNorm(self,x):
+        return ((x-x.min())/(x.max()-x.min())).tolist()
+    def __tanSigmoid(self,x):
+        output = []
+        for xi in x:
+            output.append((2/(1+np.exp(-2*xi)))-1)
+        return output
+    def __logSigmoid(self,x):
+        return (1/(1+np.exp(-1*x)))
+    def __forwardSingleBatch(self,x):
+        x = [1] + self.__minMaxNorm(x)
+        x = [1] + self.__tanSigmoid(self.fc1 @ x)
+        x = self.fc2 @ x
+        x = self.__logSigmoid(x[0])
+        return x
+    def __call__(self,x):
+        output = []
+        for xi in tqdm(x):
+            output.append(self.__forwardSingleBatch(xi))
+        return output + [0]*99
+class Casey1p1():
+    def __init__(self):
+        self.range = pd.read_csv(f'{DATA_PATH}/casey_network/range',header=None).to_numpy()
+        self.fc1 = pd.read_csv(f'{DATA_PATH}/casey_network/input',header=None).to_numpy()
+        self.fc2 = pd.read_csv(f'{DATA_PATH}/casey_network/hidden',header=None).to_numpy()
+    def __minMaxNorm(self,x):
+        return ((2*((x-self.range[:,0])/(self.range[:,1]-self.range[:,0])))-1).tolist()
+    def __tanSigmoid(self,x):
+        output = []
+        for xi in x:
+            output.append((2/(1+np.exp(-2*xi)))-1)
+        return output
+    def __logSigmoid(self,x):
+        return (1/(1+np.exp(-1*x)))
+    def __forwardSingleBatch(self,x):
+        x = [1] + self.__minMaxNorm(x)
+        x = [1] + self.__tanSigmoid(self.fc1 @ x)
+        x = self.fc2 @ x
+        x = self.__logSigmoid(x[0])
+        return x
+    def __call__(self,x):
+        output = []
+        for xi in tqdm(x):
+            output.append(self.__forwardSingleBatch(xi))
+        return output + [0]*99
